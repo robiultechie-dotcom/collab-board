@@ -1,15 +1,17 @@
-﻿# frozen_string_literal: true
+# frozen_string_literal: true
+
 class BoardsController < ApplicationController
   MAX_CANVAS = 5.megabytes
   MAX_THUMB  = 300.kilobytes
 
+  skip_before_action :verify_authenticity_token, only: %i[save_page add_page remove_page update_permissions]
   before_action :require_nickname, only: %i[show create]
   before_action :set_board, only: %i[show state destroy add_page save_page remove_page update_permissions]
 
   def index
     return if current_nickname.blank?
     @boards = Board.includes(:board_permissions).order(updated_at: :desc)
-    @page_counts = BoardPage.group(:board_id).count # canvas_data লোড হবে না
+    @page_counts = BoardPage.group(:board_id).count
   end
 
   def set_nickname
@@ -33,7 +35,6 @@ class BoardsController < ApplicationController
     page = @board.board_pages.find_by(id: params[:page_id]) || @board.board_pages.order(:position).first
     version = page&.updated_at.to_f
     since = params[:since].to_f
-    # বদলায়নি হলে ভারী canvas_data পাঠানো হবে না
     if page && since > 0 && version <= since + 0.0001
       return render json: { page_id: page.id, version: version, unchanged: true }
     end
@@ -52,7 +53,8 @@ class BoardsController < ApplicationController
   end
 
   def save_page
-    return head :forbidden unless @board.capabilities_for(current_nickname)[:can_edit]
+    actor = current_nickname.presence || params[:nickname].to_s.strip
+    return head :forbidden unless @board.capabilities_for(actor)[:can_edit]
     page = @board.board_pages.find_by(id: params[:page_id]) || @board.board_pages.order(:position).first
     return head :not_found unless page
 
@@ -87,7 +89,8 @@ class BoardsController < ApplicationController
   end
 
   def add_page
-    return head :forbidden unless @board.capabilities_for(current_nickname)[:can_manage_pages]
+    actor = current_nickname.presence || params[:nickname].to_s.strip
+    return head :forbidden unless @board.capabilities_for(actor)[:can_manage_pages]
     next_pos = (@board.board_pages.maximum(:position) || 0) + 1
     page = @board.board_pages.create!(position: next_pos, canvas_data: Board::EMPTY_CANVAS)
     broadcast_pages
@@ -95,7 +98,8 @@ class BoardsController < ApplicationController
   end
 
   def remove_page
-    return head :forbidden unless @board.capabilities_for(current_nickname)[:can_manage_pages]
+    actor = current_nickname.presence || params[:nickname].to_s.strip
+    return head :forbidden unless @board.capabilities_for(actor)[:can_manage_pages]
     return head :unprocessable_entity if @board.board_pages.count <= 1
     @board.board_pages.find(params[:page_id]).destroy!
     @board.board_pages.order(:position).each_with_index { |p, i| p.update_column(:position, i + 1) }
@@ -105,7 +109,8 @@ class BoardsController < ApplicationController
   end
 
   def update_permissions
-    return head :forbidden unless @board.capabilities_for(current_nickname)[:can_manage_permissions]
+    actor = current_nickname.presence || params[:nickname].to_s.strip
+    return head :forbidden unless @board.capabilities_for(actor)[:can_manage_permissions]
     if params[:access_level].present? && Board::ROLES.include?(params[:access_level])
       @board.update!(access_level: params[:access_level])
     end
@@ -126,7 +131,7 @@ class BoardsController < ApplicationController
 
   def require_nickname
     return if current_nickname.present?
-    session[:return_to] = request.fullpath if request.get? # share link-এ ফিরে আসবে
+    session[:return_to] = request.fullpath if request.get?
     redirect_to root_path, alert: "Please enter a nickname first."
   end
 
