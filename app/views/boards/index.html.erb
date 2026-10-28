@@ -100,7 +100,7 @@
                 <div class="d-flex justify-content-between align-items-center pt-2 border-top">
                   <a href="<%= board_path(board) %>" class="btn btn-sm btn-outline-primary px-3">Open</a>
                   <% if role == "owner" %>
-                    <%= button_to board_path(board), method: :delete, form: { onsubmit: "return confirm('এই board স্থায়ীভাবে মুছে যাবে। নিশ্চিত?')" }, class: "btn btn-sm btn-link text-danger p-0" do %>
+                    <%= button_to board_path(board), method: :delete, class: "btn btn-sm btn-link text-danger p-0" do %>
                       <i class="bi bi-trash3"></i>
                     <% end %>
                   <% end %>

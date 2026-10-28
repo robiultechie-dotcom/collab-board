@@ -759,7 +759,6 @@
         active.forEach(o => { canvas.remove(o); sendDelta('remove', o); });
         canvas.discardActiveObject(); canvas.renderAll();
       } else {
-        if (!confirm('পুরো page মুছে যাবে। নিশ্চিত?')) return;
         canvas.clear(); canvas.backgroundColor = '#ffffff'; canvas.renderAll();
         undoStack.length = 0;
         sendDelta('clear');
@@ -782,7 +781,7 @@
         });
     });
     document.getElementById('delPageBtn').addEventListener('click', () => {
-      if (pages.length > 1 && confirm('এই page মুছে ফেলবেন?')) {
+      if (pages.length > 1) {
         fetch(`/boards/${BOARD_ID}/pages/${currentPageId}`, { method: 'DELETE', headers: { 'X-CSRF-Token': CSRF } });
       }
     });
