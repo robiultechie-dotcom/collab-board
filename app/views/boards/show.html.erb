@@ -1,0 +1,887 @@
+﻿<style>
+  html, body { width: 100vw; height: 100vh; overflow: hidden; margin: 0; user-select: none; }
+  #studio { position: relative; width: 100vw; height: 100vh; background: #fff radial-gradient(#cbd5e1 1.2px, transparent 1.2px); background-size: 22px 22px; }
+  .top-nav { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: #fff; border-bottom: 1px solid #e2e8f0; z-index: 100; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; }
+  .left-dock { position: fixed; top: 64px; left: 14px; z-index: 100; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 5px; }
+  .tool-btn { width: 38px; height: 38px; border-radius: 8px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.15s ease; }
+  .tool-btn:hover:not(:disabled) { background: #f1f5f9; color: #0f172a; }
+  .tool-btn.active { background: #2563eb; color: #fff; }
+  .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .color-dot { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
+  .color-dot.active { transform: scale(1.25); box-shadow: 0 0 0 2px #2563eb; }
+  .zoom-box { position: fixed; bottom: 14px; right: 14px; z-index: 100; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px 8px; }
+  .remote-cursor { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 90; }
+  .size-flyout { position: fixed; top: 140px; left: 64px; z-index: 105; background: #fff; border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px 14px; box-shadow: 0 12px 28px rgba(15,23,42,0.15); width: 205px; display: none; }
+  .size-preset-pill { width: 34px; height: 34px; border-radius: 8px; border: 1px solid #e2e8f0; background: #f8fafc; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .size-preset-pill.active { border-color: #2563eb; background: #eff6ff; }
+  .size-preview-dot { background-color: #0f172a; border-radius: 50%; display: block; }
+  #eraserRing { position: fixed; pointer-events: none; border: 1.5px solid #475569; background: rgba(255,255,255,0.45); border-radius: 50%; z-index: 95; display: none; transform: translate(-50%, -50%); }
+  .page-strip { position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; gap: 8px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 6px; max-width: 60vw; overflow-x: auto; }
+  .strip-item { position: relative; width: 96px; height: 54px; border: 2px solid #e2e8f0; border-radius: 6px; background: #f8fafc; cursor: pointer; flex: none; overflow: hidden; }
+  .strip-item.active { border-color: #2563eb; }
+  .strip-item img { width: 100%; height: 100%; object-fit: contain; }
+  .strip-item span { position: absolute; left: 3px; bottom: 1px; font-size: .65rem; font-weight: 700; background: #fff; padding: 0 3px; border-radius: 3px; }
+</style>
+<div id="studio">
+  <div class="top-nav">
+    <div class="d-flex align-items-center gap-2">
+      <a href="<%= root_path %>" class="btn btn-sm btn-outline-secondary" id="backToBoardsBtn" data-turbo="false" data-turbolinks="false" data-hard-nav><i class="bi bi-arrow-left"></i></a>
+      <a href="<%= board_path(@board) %>" class="fw-bold text-decoration-none text-dark" id="boardTitleLink" data-turbo="false" data-turbolinks="false" data-hard-nav title="Reload board"><%= @board.title %></a>
+      <span class="badge bg-primary text-uppercase" id="roleBadge" style="font-size:0.65rem;"><%= @capabilities[:role] %></span>
+      <small class="text-muted ms-2 d-none d-md-inline">
+        User: <strong><%= current_nickname %></strong> &bull;
+        <span id="syncText" class="text-success fw-medium">Saved</span>
+      </small>
+    </div>
+    <div class="d-flex align-items-center gap-2 bg-light border rounded-2 px-2 py-1">
+      <button class="btn btn-sm p-0" id="prevPageBtn" title="Previous Page"><i class="bi bi-chevron-left"></i></button>
+      <span class="small fw-bold px-1" id="pageIndicator">1 / <%= @pages.size %></span>
+      <button class="btn btn-sm p-0" id="nextPageBtn" title="Next Page"><i class="bi bi-chevron-right"></i></button>
+      <button class="btn btn-sm btn-primary py-0 px-2" id="addPageBtn" title="Add Page" <%= "disabled" unless @capabilities[:can_manage_pages] %>><i class="bi bi-plus"></i></button>
+      <button class="btn btn-sm btn-outline-danger py-0 px-1" id="delPageBtn" title="Remove Page" <%= "disabled" unless @capabilities[:can_manage_pages] %>><i class="bi bi-trash"></i></button>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#permModal"><i class="bi bi-shield-lock me-1"></i>Permissions</button>
+      <button class="btn btn-sm btn-success" id="exportBtn"><i class="bi bi-download me-1"></i>Export JPEG</button>
+    </div>
+  </div>
+  <div class="left-dock">
+    <button class="tool-btn active" data-tool="select" title="Select / Move (V)"><i class="bi bi-cursor-fill"></i></button>
+    <button class="tool-btn" data-tool="pan" title="Pan / Scroll (H)"><i class="bi bi-hand-index-thumb"></i></button>
+    <hr class="my-1">
+    <button class="tool-btn edit-tool" data-tool="pen" title="Pen Tool (P)"><i class="bi bi-pencil-fill"></i></button>
+    <button class="tool-btn edit-tool" data-tool="eraser" title="Eraser - drag to erase part of a stroke (E)"><i class="bi bi-eraser-fill"></i></button>
+    <button class="tool-btn edit-tool position-relative" id="sizeToggleBtn" title="Adjust Brush / Eraser Size">
+      <i class="bi bi-border-width"></i>
+      <span id="dockSizeBadge" class="position-absolute bottom-0 end-0 badge rounded-pill bg-dark" style="font-size:0.55rem; padding: 2px 4px;">4</span>
+    </button>
+    <hr class="my-1">
+    <button class="tool-btn edit-tool" data-tool="rect" title="Rectangle (R)"><i class="bi bi-square"></i></button>
+    <button class="tool-btn edit-tool" data-tool="circle" title="Circle (C)"><i class="bi bi-circle"></i></button>
+    <button class="tool-btn edit-tool" data-tool="line" title="Line (L)"><i class="bi bi-slash-lg"></i></button>
+    <button class="tool-btn edit-tool" data-tool="text" title="Text (T)"><i class="bi bi-fonts"></i></button>
+    <hr class="my-1">
+    <div class="d-flex flex-column align-items-center gap-2 py-1">
+      <% ["#0f172a", "#ef4444", "#22c55e", "#2563eb", "#eab308"].each_with_index do |c, i| %>
+        <span class="color-dot <%= 'active' if i == 0 %>" data-color="<%= c %>" style="background:<%= c %>;"></span>
+      <% end %>
+    </div>
+    <hr class="my-1">
+    <button class="tool-btn edit-tool text-danger" id="clearBtn" title="Clear Frame"><i class="bi bi-trash3"></i></button>
+  </div>
+  <div id="sizeFlyout" class="size-flyout">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <span class="small fw-bold text-secondary" id="sizeTitle">Brush Thickness</span>
+      <span class="badge bg-primary" id="sizeValueBadge">4 px</span>
+    </div>
+    <div class="d-flex align-items-center justify-content-between gap-1 mb-3">
+      <div class="size-preset-pill active" data-val="3"><span class="size-preview-dot" style="width:4px;height:4px;"></span></div>
+      <div class="size-preset-pill" data-val="8"><span class="size-preview-dot" style="width:8px;height:8px;"></span></div>
+      <div class="size-preset-pill" data-val="16"><span class="size-preview-dot" style="width:14px;height:14px;"></span></div>
+      <div class="size-preset-pill" data-val="32"><span class="size-preview-dot" style="width:20px;height:20px;"></span></div>
+    </div>
+    <input type="range" class="form-range" id="sizeSlider" min="2" max="60" value="4">
+  </div>
+  <canvas id="boardCanvas"></canvas>
+  <div id="eraserRing"></div>
+  <div id="cursorsLayer"></div>
+  <div id="pageStrip" class="page-strip"></div>
+  <div class="zoom-box d-flex align-items-center gap-2 shadow-sm">
+    <button class="btn btn-sm btn-light py-0 px-2" id="zoomOutBtn">-</button>
+    <span class="small fw-semibold" id="zoomText">100%</span>
+    <button class="btn btn-sm btn-light py-0 px-2" id="zoomInBtn">+</button>
+    <button class="btn btn-sm btn-link p-0 small text-decoration-none" id="zoomResetBtn">Reset</button>
+  </div>
+</div>
+<div class="modal fade" id="permModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content rounded-4 border-0 shadow">
+      <div class="modal-header border-bottom-0 pb-0">
+        <h6 class="modal-title fw-bold">Board Permissions (Owner: <%= @board.owner_nickname %>)</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <label class="form-label small fw-bold">Default Role for Visitors</label>
+        <select id="accessLevelSelect" class="form-select form-select-sm mb-3" <%= "disabled" unless @capabilities[:can_manage_permissions] %>>
+          <option value="viewer">Viewer (Read Only)</option>
+          <option value="editor">Editor (Draw Only)</option>
+          <option value="manager">Manager (Draw + Add/Remove Pages)</option>
+        </select>
+        <% if @capabilities[:can_manage_permissions] %>
+          <label class="form-label small fw-bold">Assign Role by Nickname</label>
+          <div class="input-group input-group-sm mb-3">
+            <input type="text" id="targetNickInput" class="form-control" placeholder="Nickname...">
+            <select id="targetRoleSelect" class="form-select" style="max-width:130px;">
+              <option value="viewer">Viewer</option>
+              <option value="editor">Editor</option>
+              <option value="manager">Manager</option>
+            </select>
+            <button class="btn btn-primary" id="savePermBtn" type="button">Apply</button>
+          </div>
+        <% end %>
+        <ul class="list-group list-group-flush border rounded-3 small" id="permList"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  (() => {
+    const BOARD_ID = <%= @board.id %>;
+    const OWNER = <%= raw json_escape(@board.owner_nickname.to_json) %>;
+    const USER = <%= raw json_escape(current_nickname.to_json) %>;
+    const CLIENT_ID = Math.random().toString(36).slice(2, 10);
+    const CSRF = document.querySelector('meta[name="csrf-token"]')?.content;
+    let pages = <%= raw json_escape(@pages.map { |p| { id: p.id, position: p.position, canvas_data: p.canvas_data, thumbnail: p.thumbnail, version: p.updated_at.to_f } }.to_json) %>;
+    let permissions = <%= raw json_escape(@permissions.map { |p| { nickname: p.nickname, role: p.role } }.to_json) %>;
+    let accessLevel = <%= raw json_escape(@board.access_level.to_json) %>;
+    let currentPageId = Number(pages[0]?.id);
+    let lastKnownVersion = Number(pages[0]?.version || 0);
+    let tool = 'pen';
+    let currentColor = '#0f172a';
+    let penWidth = 4;
+    let eraserWidth = 28;
+    let isPanning = false;
+    let isPointerDown = false;
+    let draft = null, startX = 0, startY = 0, panX = 0, panY = 0;
+    let sub = null;
+    const undoStack = [];
+    const cursors = {};
+
+    // ---- Save state (single-flight + revision counter) ----
+    let rev = 0;            // প্রতিটি লোকাল পরিবর্তনে বাড়ে
+    let savedRev = 0;       // সর্বশেষ যে rev সার্ভারে সেভ হয়েছে
+    let saving = false;
+    let saveTimer = null, thumbTimer = null;
+    let lastThumbAt = 0, retryDelay = 1000;
+    let loadToken = 0;
+
+    const eraserRing = document.getElementById('eraserRing');
+    const sizeFlyout = document.getElementById('sizeFlyout');
+    const sizeSlider = document.getElementById('sizeSlider');
+    const sizeValueBadge = document.getElementById('sizeValueBadge');
+    const dockSizeBadge = document.getElementById('dockSizeBadge');
+    const sizeTitle = document.getElementById('sizeTitle');
+    const syncText = document.getElementById('syncText');
+    const setStatus = (text, cls) => { if (syncText) { syncText.textContent = text; syncText.className = cls; } };
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const escapeHtml = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const canvas = new fabric.Canvas('boardCanvas', {
+      width: window.innerWidth,
+      height: window.innerHeight,
+      backgroundColor: '#ffffff',
+      preserveObjectStacking: true
+    });
+    canvas.perPixelTargetFind = true;
+    canvas.targetFindTolerance = 6;
+
+    const makeUid = () => `${CLIENT_ID}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const getCaps = () => {
+      if (USER.toLowerCase() === OWNER.toLowerCase()) return { role: 'owner', edit: true, pages: true, perms: true };
+      const p = permissions.find(x => x.nickname.toLowerCase() === USER.toLowerCase());
+      const role = p ? p.role : (accessLevel || 'manager');
+      return { role, edit: ['editor', 'manager', 'owner'].includes(role), pages: ['manager', 'owner'].includes(role), perms: role === 'owner' };
+    };
+    let caps = getCaps();
+    const refreshUI = () => {
+      caps = getCaps();
+      document.getElementById('roleBadge').textContent = caps.role;
+      document.getElementById('addPageBtn').disabled = !caps.pages;
+      document.getElementById('delPageBtn').disabled = !caps.pages || pages.length <= 1;
+      document.querySelectorAll('.edit-tool').forEach(b => b.disabled = !caps.edit);
+      if (!caps.edit && !['select', 'pan'].includes(tool)) setTool('pan');
+      renderPerms();
+    };
+    window.addEventListener('resize', () => {
+      canvas.setWidth(window.innerWidth);
+      canvas.setHeight(window.innerHeight);
+      canvas.renderAll();
+    });
+    const serializeCanvas = () => {
+      const jsonObj = canvas.toJSON(['uid', 'isEraser']);
+      jsonObj.background = '#ffffff';
+      return JSON.stringify(jsonObj);
+    };
+
+    // ---- Thumbnail ও Export: viewport নয়, পুরো content ধরে ----
+    const renderRegion = (quality, targetW) => {
+      const vpt = canvas.viewportTransform.slice();
+      const skip = canvas.skipOffscreen;
+      canvas.skipOffscreen = false;
+      canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
+      let r = { left: 0, top: 0, width: canvas.width, height: canvas.height };
+      const objs = canvas.getObjects();
+      if (objs.length) {
+        let x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+        objs.forEach(o => {
+          const b = o.getBoundingRect(true, true);
+          x1 = Math.min(x1, b.left); y1 = Math.min(y1, b.top);
+          x2 = Math.max(x2, b.left + b.width); y2 = Math.max(y2, b.top + b.height);
+        });
+        r = { left: x1 - 20, top: y1 - 20, width: x2 - x1 + 40, height: y2 - y1 + 40 };
+      }
+      const url = canvas.toDataURL({
+        format: 'jpeg', quality,
+        left: r.left, top: r.top, width: r.width, height: r.height,
+        multiplier: targetW ? Math.min(targetW / r.width, 2) : 1
+      });
+      canvas.skipOffscreen = skip;
+      canvas.setViewportTransform(vpt);
+      return url;
+    };
+    const makeThumb = () => {
+      const t = renderRegion(0.7, 480);
+      const pg = pages.find(p => Number(p.id) === Number(currentPageId));
+      if (pg) { pg.thumbnail = t; renderStrip(); }
+      return t;
+    };
+
+    // ---- Database save: একবারে একটাই রিকোয়েস্ট, fail করলে retry ----
+    const flushSave = async () => {
+      if (saving || !caps.edit || rev === savedRev) return;
+      saving = true;
+      const myRev = rev;
+      const json = serializeCanvas();
+      const pg = pages.find(p => Number(p.id) === Number(currentPageId));
+      if (pg) pg.canvas_data = json;
+      const body = { client_id: CLIENT_ID, nickname: USER, page_id: currentPageId, canvas_data: json, broadcast_full: 1 };
+      let withThumb = false;
+      if (Date.now() - lastThumbAt > 5000) { body.thumbnail = makeThumb(); withThumb = true; }
+      try {
+        const res = await fetch(`/boards/${BOARD_ID}/save_page`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        if (data && data.version) lastKnownVersion = Math.max(lastKnownVersion, Number(data.version));
+        savedRev = myRev;
+        retryDelay = 1000;
+        if (withThumb) { lastThumbAt = Date.now(); clearTimeout(thumbTimer); }
+        else {
+          clearTimeout(thumbTimer);
+          thumbTimer = setTimeout(() => { if (rev === savedRev) { rev++; flushSave(); } }, 5200);
+        }
+      } catch (_) {
+        saving = false;
+        setStatus('Retrying...', 'text-danger fw-medium');
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(flushSave, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 8000);
+        return;
+      }
+      saving = false;
+      if (rev !== savedRev) flushSave();   // সেভ চলাকালীন নতুন কিছু আঁকা হয়েছে
+      else setStatus('Saved', 'text-success fw-medium');
+    };
+    const scheduleDatabaseSave = (immediate = false) => {
+      if (!caps.edit) return;
+      rev++;
+      setStatus('Saving...', 'text-warning fw-medium');
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(flushSave, immediate ? 0 : 300);
+    };
+    // পেজ বদলানো/বের হওয়ার আগে সব সেভ শেষ হওয়া পর্যন্ত অপেক্ষা
+    const settleSaves = async () => {
+      clearTimeout(saveTimer);
+      const deadline = Date.now() + 8000;
+      while ((saving || rev !== savedRev) && caps.edit && Date.now() < deadline) {
+        if (!saving) await flushSave(); else await sleep(40);
+      }
+    };
+    const flushBeforeLeave = () => {
+      if (!caps.edit || rev === savedRev) return;
+      try {
+        fetch(`/boards/${BOARD_ID}/save_page`, {
+          method: 'PATCH',
+          keepalive: true,
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF },
+          body: JSON.stringify({ client_id: CLIENT_ID, nickname: USER, page_id: currentPageId, canvas_data: serializeCanvas(), broadcast_full: 1 })
+        });
+      } catch (_) {}
+    };
+    window.addEventListener('beforeunload', flushBeforeLeave);
+    window.addEventListener('pagehide', flushBeforeLeave);
+
+    // Logo / নাম / back — সবসময় full reload (Turbo বন্ধ)
+    document.querySelectorAll('[data-hard-nav]').forEach(a => {
+      a.addEventListener('click', (e) => {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault();
+        const href = a.href;
+        flushBeforeLeave();
+        window.location.assign(href);
+      });
+    });
+
+    // ---- Live sync + Undo ----
+    const sendDelta = (actionType, fabricObj = null, track = true) => {
+      if (!caps.edit) return;
+      let objJson = null, objUid = null;
+      if (fabricObj) {
+        if (!fabricObj.uid) fabricObj.uid = makeUid();
+        objUid = fabricObj.uid;
+        objJson = JSON.stringify(fabricObj.toJSON(['uid', 'isEraser']));
+      }
+      if (track && objJson && (actionType === 'add' || actionType === 'remove')) undoStack.push({ actionType, objUid, objJson });
+      if (sub) sub.perform('draw_delta', { client_id: CLIENT_ID, page_id: currentPageId, action_type: actionType, object_uid: objUid, object_json: objJson });
+      scheduleDatabaseSave();
+    };
+    const applyObjectPermissions = (o) => {
+      if (o.isEraser || o.stroke === '#ffffff') {
+        o.isEraser = true; o.selectable = false; o.evented = false;
+      } else {
+        o.selectable = caps.edit && tool === 'select'; o.evented = true;
+      }
+    };
+    const undo = () => {
+      const a = undoStack.pop();
+      if (!a || !caps.edit) return;
+      if (a.actionType === 'erase') {
+        canvas.getObjects().filter(o => a.added.includes(o.uid)).forEach(o => { canvas.remove(o); sendDelta('remove', o, false); });
+        fabric.util.enlivenObjects(a.removed.map(j => JSON.parse(j)), (objs) => {
+          objs.forEach(o => { applyObjectPermissions(o); canvas.add(o); sendDelta('add', o, false); });
+          canvas.renderAll();
+        });
+        canvas.renderAll();
+        return;
+      }
+      if (a.actionType === 'add') {
+        const t = canvas.getObjects().find(o => o.uid === a.objUid);
+        if (t) { canvas.remove(t); canvas.renderAll(); sendDelta('remove', t, false); }
+      } else {
+        fabric.util.enlivenObjects([JSON.parse(a.objJson)], (objs) => objs.forEach(o => {
+          applyObjectPermissions(o); canvas.add(o); canvas.renderAll(); sendDelta('add', o, false);
+        }));
+      }
+    };
+    // canvas.add() / remove() কোনো path:created বা object:modified ইভেন্ট চালায় না,
+    // তাই রিমোট ডেল্টার জন্য isRemote ফ্ল্যাগ লাগে না।
+    const applyRemoteDelta = (data) => {
+      if (data.action_type === 'clear') {
+        canvas.clear(); canvas.backgroundColor = '#ffffff'; canvas.renderAll(); return;
+      }
+      if (data.action_type === 'remove' && data.object_uid) {
+        const target = canvas.getObjects().find(o => o.uid === data.object_uid);
+        if (target) canvas.remove(target);
+        canvas.renderAll(); return;
+      }
+      if (!data.object_json) return;
+      let rawObj = null;
+      try { rawObj = JSON.parse(data.object_json); } catch (_) { return; }
+      fabric.util.enlivenObjects([rawObj], (objs) => {
+        objs.forEach(o => {
+          if (o.uid) {
+            const existing = canvas.getObjects().find(x => x.uid === o.uid);
+            if (existing) canvas.remove(existing);
+          }
+          applyObjectPermissions(o);
+          canvas.add(o);
+        });
+        canvas.renderAll();
+      });
+    };
+    const canApplyRemoteFull = () => {
+      const active = canvas.getActiveObject();
+      return !(isPointerDown || draft || saving || rev !== savedRev || (active && active.isEditing));
+    };
+    const applyFullRemoteCanvas = (rawJson, version = null) => {
+      if (!rawJson) return false;
+      if (version) {
+        if (Number(version) <= lastKnownVersion + 0.0001) return false;
+      }
+      if (!canApplyRemoteFull()) return false;
+      if (version) lastKnownVersion = Number(version);
+      let parsed = rawJson;
+      if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) { return false; } }
+      const pg = pages.find(p => Number(p.id) === Number(currentPageId));
+      if (pg) { pg.canvas_data = typeof rawJson === 'string' ? rawJson : JSON.stringify(rawJson); if (version) pg.version = Number(version); }
+      const token = ++loadToken;
+      canvas.loadFromJSON(parsed, () => {
+        if (token !== loadToken) return;
+        canvas.backgroundColor = '#ffffff';
+        canvas.forEachObject(o => { if (!o.uid) o.uid = makeUid(); applyObjectPermissions(o); });
+        canvas.renderAll();
+      });
+      return true;
+    };
+
+    // ---- Page strip (preview) ----
+    const renderStrip = () => {
+      const el = document.getElementById('pageStrip');
+      el.innerHTML = '';
+      pages.forEach((p, i) => {
+        const d = document.createElement('div');
+        d.className = 'strip-item' + (Number(p.id) === Number(currentPageId) ? ' active' : '');
+        d.innerHTML = (p.thumbnail ? `<img src="${escapeHtml(p.thumbnail)}">` : '') + `<span>${i + 1}</span>`;
+        d.addEventListener('click', () => { if (Number(p.id) !== Number(currentPageId)) goToPage(p.id); });
+        el.appendChild(d);
+      });
+    };
+    const renderPageIndicator = () => {
+      document.getElementById('pageIndicator').textContent = `${pages.findIndex(p => Number(p.id) === currentPageId) + 1} / ${pages.length}`;
+      renderStrip();
+    };
+    const EMPTY = '{"version":"5.3.0","objects":[],"background":"#ffffff"}';
+    const loadPage = (id) => {
+      const pg = pages.find(p => Number(p.id) === Number(id)) || pages[0];
+      if (!pg) return;
+      currentPageId = Number(pg.id);
+      undoStack.length = 0;
+      Object.values(cursors).forEach(c => c.el.remove());
+      Object.keys(cursors).forEach(k => delete cursors[k]);
+      lastKnownVersion = 0;               // ফোর্স করে প্রথমবার apply হবে
+      const token = ++loadToken;
+      let parsed = pg.canvas_data || EMPTY;
+      if (typeof parsed === 'string') { try { parsed = JSON.parse(parsed); } catch (_) {} }
+      canvas.loadFromJSON(parsed, () => {
+        if (token !== loadToken) return;
+        canvas.backgroundColor = '#ffffff';
+        canvas.forEachObject(o => { if (!o.uid) o.uid = makeUid(); applyObjectPermissions(o); });
+        canvas.renderAll();
+      });
+      lastKnownVersion = Number(pg.version || 0);
+      renderPageIndicator();
+      refreshUI();
+      pollState();
+    };
+    const goToPage = async (id) => { await settleSaves(); loadPage(id); };
+
+    // ---- Polling fallback: ActionCable মিস করলেও ~1 সেকেন্ডে সিঙ্ক (বদলালে তবেই ডেটা আসে) ----
+    let polling = false;
+    const pollState = async () => {
+      if (polling || document.hidden || !canApplyRemoteFull()) return;
+      polling = true;
+      const pid = currentPageId;
+      try {
+        const res = await fetch(`/boards/${BOARD_ID}/state?page_id=${pid}&since=${lastKnownVersion}`, { headers: { Accept: 'application/json' } });
+        if (res.ok) {
+          const state = await res.json();
+          if (state && Number(state.page_id) === Number(currentPageId) && pid === currentPageId) {
+            applyFullRemoteCanvas(state.canvas_data, state.version);
+          }
+        }
+      } catch (_) {}
+      polling = false;
+    };
+    setInterval(pollState, 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pollState(); });
+
+    // ---- Tools ----
+    const updateSizeState = () => {
+      const activeWidth = (tool === 'eraser') ? eraserWidth : penWidth;
+      sizeTitle.textContent = (tool === 'eraser') ? 'Eraser Size' : 'Pen Size';
+      sizeSlider.value = activeWidth;
+      sizeValueBadge.textContent = activeWidth + ' px';
+      dockSizeBadge.textContent = activeWidth;
+      document.querySelectorAll('.size-preset-pill').forEach(pill => {
+        const val = parseInt(pill.dataset.val, 10);
+        pill.classList.toggle('active', Math.abs(val - activeWidth) <= 2);
+      });
+      if (canvas.isDrawingMode && canvas.freeDrawingBrush) canvas.freeDrawingBrush.width = activeWidth;
+    };
+    const setTool = (next) => {
+      if (!caps.edit && !['select', 'pan'].includes(next)) return;
+      tool = next;
+      document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.classList.toggle('active', b.dataset.tool === tool));
+      if (tool === 'pen') {
+        canvas.isDrawingMode = true; canvas.selection = false;
+        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+        canvas.freeDrawingBrush.color = currentColor;
+        canvas.freeDrawingBrush.width = penWidth;
+        canvas.freeDrawingBrush.decimate = 3;
+        canvas.defaultCursor = 'crosshair';
+        eraserRing.style.display = 'none';
+      } else if (tool === 'eraser') {
+        // সাদা stroke নয়: স্ট্রোক কেটে ভাগ হয়, শুধু ইরেজারের নিচের অংশ বাদ যায়
+        canvas.isDrawingMode = false; canvas.selection = false;
+        canvas.defaultCursor = 'crosshair';
+      } else {
+        canvas.isDrawingMode = false;
+        eraserRing.style.display = 'none';
+        canvas.selection = (tool === 'select' && caps.edit);
+        canvas.defaultCursor = (tool === 'pan' ? 'grab' : (tool === 'select' ? 'default' : 'crosshair'));
+      }
+      canvas.forEachObject(o => applyObjectPermissions(o));
+      canvas.discardActiveObject();
+      canvas.renderAll();
+      updateSizeState();
+    };
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
+    document.getElementById('sizeToggleBtn').addEventListener('click', () => {
+      sizeFlyout.style.display = (sizeFlyout.style.display === 'block') ? 'none' : 'block';
+    });
+    sizeSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value, 10);
+      if (tool === 'eraser') eraserWidth = val;
+      else {
+        penWidth = val;
+        const activeObj = canvas.getActiveObject();
+        if (activeObj && caps.edit && activeObj.strokeWidth !== undefined) {
+          activeObj.set('strokeWidth', penWidth); canvas.renderAll(); sendDelta('modify', activeObj);
+        }
+      }
+      updateSizeState();
+    });
+    document.querySelectorAll('.size-preset-pill').forEach(pill => {
+      pill.addEventListener('click', () => {
+        const val = parseInt(pill.dataset.val, 10);
+        if (tool === 'eraser') eraserWidth = val; else penWidth = val;
+        updateSizeState();
+      });
+    });
+    document.querySelectorAll('.color-dot').forEach(d => d.addEventListener('click', () => {
+      currentColor = d.dataset.color;
+      document.querySelectorAll('.color-dot').forEach(x => x.classList.toggle('active', x === d));
+      if (tool === 'pen' && canvas.freeDrawingBrush) canvas.freeDrawingBrush.color = currentColor;
+      const activeObj = canvas.getActiveObject();
+      if (activeObj && caps.edit) {
+        if (activeObj.type === 'i-text') activeObj.set('fill', currentColor);
+        else activeObj.set({ stroke: currentColor });
+        canvas.renderAll(); sendDelta('modify', activeObj);
+      }
+    }));
+
+    // ---- Mouse ----
+    // ---- Partial eraser: স্ট্রোক কেটে ভাগ করে (সাদা রং নয়, নতুন ডেটা প্রায় নেই) ----
+    let eraseSession = null, lastErasePt = null;
+    const objJsonOf = (o) => JSON.stringify(o.toJSON(['uid', 'isEraser']));
+    const trackRemoved = (o) => {
+      if (!eraseSession || !o.uid) return;
+      if (eraseSession.added.has(o.uid)) eraseSession.added.delete(o.uid);   // এই drag-এ তৈরি টুকরো, আসল নয়
+      else if (!eraseSession.removed.has(o.uid)) eraseSession.removed.set(o.uid, objJsonOf(o));
+    };
+    const trackAdded = (o) => { if (eraseSession && o.uid) eraseSession.added.add(o.uid); };
+
+    // Path -> canvas-space polyline (শুধু M/L/Q/C সাপোর্ট; pen stroke এগুলোই)
+    const pathToPoints = (p) => {
+      if (!(p.path || []).every(c => 'MLQC'.includes(c[0]))) return null;
+      const m = p.calcTransformMatrix(), off = p.pathOffset;
+      return p.path.map(c => fabric.util.transformPoint({ x: c[c.length - 2] - off.x, y: c[c.length - 1] - off.y }, m));
+    };
+    const lerpPt = (a, dx, dy, t) => ({ x: a.x + dx * t, y: a.y + dy * t });
+    // একটি polyline-কে বৃত্ত (c, R) থেকে বাইরের অংশে কেটে runs ফেরত দেয়
+    const clipRun = (run, c, R) => {
+      const R2 = R * R, out = [];
+      let cur = [];
+      const flush = () => { if (cur.length) out.push(cur); cur = []; };
+      if (run.length === 1) {
+        const dx = run[0].x - c.x, dy = run[0].y - c.y;
+        return dx * dx + dy * dy > R2 ? [run] : [];
+      }
+      for (let i = 0; i < run.length - 1; i++) {
+        const a = run[i], b = run[i + 1];
+        const dx = b.x - a.x, dy = b.y - a.y, fx = a.x - c.x, fy = a.y - c.y;
+        const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - R2;
+        let t1 = 1, t2 = 0;                       // ডিফল্ট: ভেতরে কিছু নেই
+        if (A > 1e-9) {
+          const disc = B * B - 4 * A * C;
+          if (disc > 0) { const sq = Math.sqrt(disc); t1 = (-B - sq) / (2 * A); t2 = (-B + sq) / (2 * A); }
+        } else if (C <= 0) { t1 = 0; t2 = 1; }
+        const lo = Math.max(0, t1), hi = Math.min(1, t2);
+        if (lo >= hi) { if (!cur.length) cur.push(a); cur.push(b); continue; }   // পুরো segment বাইরে
+        if (lo > 0) { if (!cur.length) cur.push(a); cur.push(lerpPt(a, dx, dy, lo)); }
+        flush();
+        if (hi < 1) { cur.push(lerpPt(a, dx, dy, hi)); cur.push(b); }
+      }
+      flush();
+      return out;
+    };
+    const r2 = (n) => Math.round(n * 100) / 100;
+    const buildPiece = (src, run) => {
+      const pts = run.filter((q, i) => i === 0 || Math.abs(q.x - run[i - 1].x) > 0.05 || Math.abs(q.y - run[i - 1].y) > 0.05);
+      if (pts.length < 2) return null;            // ছোট্ট কুচি ফেলে দেওয়া হয়
+      const cmds = pts.map((q, i) => [i ? 'L' : 'M', r2(q.x), r2(q.y)]);
+      const piece = new fabric.Path(cmds, {
+        stroke: src.stroke, strokeWidth: src.strokeWidth * Math.abs(src.scaleX || 1), fill: null,
+        strokeLineCap: src.strokeLineCap, strokeLineJoin: src.strokeLineJoin, strokeDashArray: src.strokeDashArray,
+        opacity: src.opacity, objectCaching: src.objectCaching
+      });
+      piece.uid = makeUid();
+      return piece;
+    };
+    const eraseCircle = (c) => {
+      const R = eraserWidth / 2;
+      canvas.getObjects().slice().forEach(o => {
+        if (o.type !== 'path' || o.isEraser || o.stroke === '#ffffff') return;
+        const reach = R + (o.strokeWidth * Math.abs(o.scaleX || 1)) / 2;
+        const bb = o.getBoundingRect(true, true);
+        if (c.x < bb.left - reach || c.x > bb.left + bb.width + reach || c.y < bb.top - reach || c.y > bb.top + bb.height + reach) return;
+        const pts = pathToPoints(o);
+        if (!pts || !pts.length) return;
+        const runs = clipRun(pts, c, reach);
+        // কিছুই কাটা না পড়লে (একটাই run, পয়েন্ট সংখ্যা একই) skip
+        if (runs.length === 1 && runs[0].length === pts.length && runs[0][0] === pts[0] && runs[0][runs[0].length - 1] === pts[pts.length - 1]) return;
+        const pieces = runs.map(r => buildPiece(o, r)).filter(Boolean);
+        const idx = canvas.getObjects().indexOf(o);
+        trackRemoved(o);
+        canvas.remove(o);
+        sendDelta('remove', o, false);
+        pieces.forEach((pc, i) => {
+          applyObjectPermissions(pc);
+          canvas.insertAt(pc, idx + i);
+          trackAdded(pc);
+          sendDelta('add', pc, false);
+        });
+      });
+    };
+    // শেপ / লাইন / টেক্সট আগের মতোই পুরোটা মোছে
+    const eraseWholeNonPath = (e) => {
+      canvas.targetFindTolerance = Math.max(6, (eraserWidth * canvas.getZoom()) / 2);
+      const t = canvas.findTarget(e, false);
+      if (t && t.type !== 'path' && !t.isEraser) {
+        trackRemoved(t); canvas.remove(t); sendDelta('remove', t, false);
+      }
+    };
+    const eraseStart = (e) => {
+      eraseSession = { removed: new Map(), added: new Set() };
+      lastErasePt = canvas.getPointer(e);
+      eraseCircle(lastErasePt);
+      eraseWholeNonPath(e);
+      canvas.requestRenderAll();
+    };
+    const eraseMove = (e) => {
+      if (!eraseSession) eraseStart(e);
+      const to = canvas.getPointer(e), from = lastErasePt || to;
+      const R = eraserWidth / 2, dist = Math.hypot(to.x - from.x, to.y - from.y);
+      const n = Math.max(1, Math.ceil(dist / Math.max(1, R / 2)));   // দ্রুত drag-এও কোনো অংশ বাদ যায় না
+      for (let i = 1; i <= n; i++) eraseCircle({ x: from.x + (to.x - from.x) * i / n, y: from.y + (to.y - from.y) * i / n });
+      lastErasePt = to;
+      eraseWholeNonPath(e);
+      canvas.requestRenderAll();
+    };
+    const finishErase = () => {
+      if (!eraseSession) return;
+      const s = eraseSession; eraseSession = null; lastErasePt = null;
+      if (s.removed.size || s.added.size) undoStack.push({ actionType: 'erase', removed: [...s.removed.values()], added: [...s.added] });
+    };
+    canvas.on('mouse:down', (opt) => {
+      const e = opt.e;
+      isPointerDown = true;
+      if (tool === 'pan' || e.altKey) { isPanning = true; panX = e.clientX; panY = e.clientY; return; }
+      if (!caps.edit) return;
+      if (tool === 'eraser') { eraseStart(e); return; }
+      if (['select', 'pen'].includes(tool)) return;
+      const pt = canvas.getPointer(e);
+      startX = pt.x; startY = pt.y;
+      if (tool === 'text') {
+        isPointerDown = false;
+        const txt = new fabric.IText('Text', { left: startX, top: startY, fontSize: 26, fill: currentColor, uid: makeUid() });
+        canvas.add(txt); canvas.setActiveObject(txt); setTool('select'); txt.enterEditing(); txt.selectAll();
+        sendDelta('add', txt);
+        return;
+      }
+      const base = { left: startX, top: startY, stroke: currentColor, strokeWidth: penWidth, fill: currentColor + '22', selectable: false, uid: makeUid() };
+      if (tool === 'rect') draft = new fabric.Rect({ ...base, width: 1, height: 1 });
+      else if (tool === 'circle') draft = new fabric.Ellipse({ ...base, rx: 1, ry: 1 });
+      else if (tool === 'line') draft = new fabric.Line([startX, startY, startX, startY], { stroke: currentColor, strokeWidth: penWidth, selectable: false, uid: makeUid() });
+      if (draft) canvas.add(draft);
+    });
+    let lastCursorSent = 0;
+    canvas.on('mouse:move', (opt) => {
+      const e = opt.e;
+      const pt = canvas.getPointer(e);
+      if (tool === 'eraser') {
+        const diameter = eraserWidth * canvas.getZoom();
+        eraserRing.style.display = 'block';
+        eraserRing.style.width = diameter + 'px'; eraserRing.style.height = diameter + 'px';
+        eraserRing.style.left = e.clientX + 'px'; eraserRing.style.top = e.clientY + 'px';
+      } else {
+        eraserRing.style.display = 'none';
+      }
+      if (sub && Date.now() - lastCursorSent > 60) {
+        lastCursorSent = Date.now();
+        sub.perform('cursor_move', { client_id: CLIENT_ID, page_id: currentPageId, x: Math.round(pt.x), y: Math.round(pt.y) });
+      }
+      if (tool === 'eraser' && isPointerDown && caps.edit) eraseMove(e);
+      if (isPanning) {
+        canvas.viewportTransform[4] += e.clientX - panX;
+        canvas.viewportTransform[5] += e.clientY - panY;
+        canvas.requestRenderAll();
+        panX = e.clientX; panY = e.clientY;
+        return;
+      }
+      if (!draft) return;
+      const w = Math.abs(pt.x - startX), h = Math.abs(pt.y - startY), l = Math.min(pt.x, startX), t = Math.min(pt.y, startY);
+      if (tool === 'line') draft.set({ x2: pt.x, y2: pt.y });
+      else if (tool === 'circle') draft.set({ left: l, top: t, rx: w / 2, ry: h / 2 });
+      else draft.set({ left: l, top: t, width: w, height: h });
+      canvas.renderAll();
+    });
+    canvas.on('mouse:out', () => { eraserRing.style.display = 'none'; });
+    canvas.on('mouse:up', () => {
+      isPanning = false; isPointerDown = false;
+      finishErase();
+      if (draft) {
+        draft.setCoords();
+        const finished = draft; draft = null;
+        sendDelta('add', finished);
+      }
+    });
+    canvas.on('path:created', (opt) => {
+      const path = opt.path;
+      path.uid = makeUid();
+      sendDelta('add', path);
+    });
+    canvas.on('object:modified', (opt) => { if (opt.target) sendDelta('modify', opt.target); });
+    canvas.on('text:changed', (opt) => { if (opt.target) sendDelta('modify', opt.target); });
+
+    // ---- Zoom: বাটন, Ctrl+scroll / touchpad pinch, scroll = pan ----
+    const showZoom = () => { document.getElementById('zoomText').textContent = `${Math.round(canvas.getZoom() * 100)}%`; };
+    const zoomTo = (z) => {
+      canvas.zoomToPoint({ x: canvas.width / 2, y: canvas.height / 2 }, Math.min(Math.max(z, 0.3), 3));
+      showZoom();
+    };
+    document.getElementById('zoomInBtn').addEventListener('click', () => zoomTo(canvas.getZoom() * 1.2));
+    document.getElementById('zoomOutBtn').addEventListener('click', () => zoomTo(canvas.getZoom() / 1.2));
+    document.getElementById('zoomResetBtn').addEventListener('click', () => { canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); showZoom(); });
+    canvas.on('mouse:wheel', (opt) => {
+      const e = opt.e;
+      e.preventDefault(); e.stopPropagation();
+      if (e.ctrlKey || e.metaKey) {   // touchpad pinch-ও ctrlKey হিসেবে আসে
+        canvas.zoomToPoint({ x: e.offsetX, y: e.offsetY }, Math.min(Math.max(canvas.getZoom() * 0.995 ** e.deltaY, 0.3), 3));
+        showZoom();
+      } else {
+        canvas.relativePan({ x: -e.deltaX, y: -e.deltaY });
+      }
+    });
+
+    // ---- Buttons ----
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (!caps.edit) return;
+      const active = canvas.getActiveObjects();
+      if (active.length) {
+        active.forEach(o => { canvas.remove(o); sendDelta('remove', o); });
+        canvas.discardActiveObject(); canvas.renderAll();
+      } else {
+        if (!confirm('পুরো page মুছে যাবে। নিশ্চিত?')) return;
+        canvas.clear(); canvas.backgroundColor = '#ffffff'; canvas.renderAll();
+        undoStack.length = 0;
+        sendDelta('clear');
+        scheduleDatabaseSave(true);
+      }
+    });
+    document.getElementById('prevPageBtn').addEventListener('click', () => {
+      const i = pages.findIndex(p => Number(p.id) === currentPageId);
+      if (i > 0) goToPage(pages[i - 1].id);
+    });
+    document.getElementById('nextPageBtn').addEventListener('click', () => {
+      const i = pages.findIndex(p => Number(p.id) === currentPageId);
+      if (i < pages.length - 1) goToPage(pages[i + 1].id);
+    });
+    document.getElementById('addPageBtn').addEventListener('click', async () => {
+      await settleSaves();
+      fetch(`/boards/${BOARD_ID}/add_page`, { method: 'POST', headers: { 'X-CSRF-Token': CSRF } })
+        .then(r => r.json()).then(d => {
+          if (d.page) { if (!pages.some(p => Number(p.id) === Number(d.page.id))) pages.push(d.page); loadPage(d.page.id); }
+        });
+    });
+    document.getElementById('delPageBtn').addEventListener('click', () => {
+      if (pages.length > 1 && confirm('এই page মুছে ফেলবেন?')) {
+        fetch(`/boards/${BOARD_ID}/pages/${currentPageId}`, { method: 'DELETE', headers: { 'X-CSRF-Token': CSRF } });
+      }
+    });
+    document.getElementById('exportBtn').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.download = `board-${BOARD_ID}.jpg`;
+      link.href = renderRegion(0.95, 0);
+      link.click();
+    });
+
+    // ---- Permissions ----
+    const renderPerms = () => {
+      document.getElementById('accessLevelSelect').value = accessLevel;
+      const ul = document.getElementById('permList');
+      ul.innerHTML = permissions.length ? '' : '<li class="list-group-item text-muted text-center">No custom user roles</li>';
+      permissions.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'list-group-item d-flex justify-content-between align-items-center';
+        li.innerHTML = `<span><strong>${escapeHtml(p.nickname)}</strong> (${escapeHtml(p.role)})</span>${caps.perms ? `<button class="btn btn-sm text-danger p-0">Remove</button>` : ''}`;
+        li.querySelector('button')?.addEventListener('click', () => updatePerm({ target_nickname: p.nickname, role: 'remove' }));
+        ul.appendChild(li);
+      });
+    };
+    const updatePerm = (body) => fetch(`/boards/${BOARD_ID}/update_permissions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': CSRF }, body: JSON.stringify(body) });
+    document.getElementById('accessLevelSelect')?.addEventListener('change', (e) => updatePerm({ access_level: e.target.value }));
+    document.getElementById('savePermBtn')?.addEventListener('click', () => {
+      const nick = document.getElementById('targetNickInput').value.trim();
+      if (nick) updatePerm({ target_nickname: nick, role: document.getElementById('targetRoleSelect').value });
+      document.getElementById('targetNickInput').value = '';
+    });
+
+    // ---- Remote cursors (zoom/pan অনুযায়ী ঠিক জায়গায়) ----
+    const colorFor = (id) => `hsl(${[...String(id)].reduce((a, c) => a + c.charCodeAt(0) * 37, 0) % 360} 70% 45%)`;
+    const placeCursors = () => Object.values(cursors).forEach(c => {
+      const p = fabric.util.transformPoint({ x: c.x, y: c.y }, canvas.viewportTransform);
+      c.el.style.transform = `translate(${p.x}px, ${p.y}px)`;
+    });
+    canvas.on('after:render', placeCursors);
+    setInterval(() => {   // ৫ সেকেন্ড নিষ্ক্রিয় cursor মুছে দেয়
+      const now = Date.now();
+      for (const [id, c] of Object.entries(cursors)) if (now - c.t > 5000) { c.el.remove(); delete cursors[id]; }
+    }, 2000);
+
+    // ---- Keyboard shortcuts ----
+    document.addEventListener('keydown', (e) => {
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+      const a = canvas.getActiveObject();
+      if (a && a.isEditing) return;
+      const k = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && k === 'z') { e.preventDefault(); undo(); return; }
+      if (k === 'delete' || k === 'backspace') {
+        const sel = canvas.getActiveObjects();
+        if (caps.edit && sel.length) {
+          sel.forEach(o => { canvas.remove(o); sendDelta('remove', o); });
+          canvas.discardActiveObject(); canvas.renderAll();
+        }
+        return;
+      }
+      const map = { v: 'select', h: 'pan', p: 'pen', e: 'eraser', r: 'rect', c: 'circle', l: 'line', t: 'text' };
+      if (!e.ctrlKey && !e.metaKey && map[k]) setTool(map[k]);
+    });
+
+    // ---- ActionCable ----
+    sub = ActionCable.createConsumer().subscriptions.create(
+      { channel: 'BoardChannel', board_id: BOARD_ID, nickname: USER, client_id: CLIENT_ID },
+      {
+        received(data) {
+          if (data.sender_id && String(data.sender_id) === String(CLIENT_ID)) return;
+          if (data.type === 'delta_event') {
+            if (Number(data.page_id) === Number(currentPageId)) applyRemoteDelta(data);
+          } else if (data.type === 'canvas_updated') {
+            if (Number(data.page_id) === Number(currentPageId)) applyFullRemoteCanvas(data.canvas_data, data.version);
+            else {
+              const pg = pages.find(p => Number(p.id) === Number(data.page_id));
+              if (pg) { pg.canvas_data = data.canvas_data; pg.version = Number(data.version); }
+            }
+          } else if (data.type === 'pages_updated') {
+            const hadCurrent = pages.some(p => Number(p.id) === Number(currentPageId));
+            const wasCurrentRemoved = hadCurrent && !data.pages.some(p => Number(p.id) === Number(currentPageId));
+            // বর্তমান পেজের লোকাল ক্যানভাস/ভার্সন নষ্ট না করে বাকি পেজ আপডেট
+            const cur = pages.find(p => Number(p.id) === Number(currentPageId));
+            pages = data.pages.map(p => (cur && Number(p.id) === Number(cur.id)) ? { ...p, canvas_data: cur.canvas_data, version: cur.version, thumbnail: cur.thumbnail || p.thumbnail } : p);
+            if (wasCurrentRemoved || !hadCurrent) loadPage(pages[0]?.id);
+            else { renderPageIndicator(); refreshUI(); }
+          } else if (data.type === 'permissions_updated') {
+            accessLevel = data.access_level; permissions = data.permissions; refreshUI();
+          } else if (data.type === 'cursor_moved' && Number(data.page_id) === Number(currentPageId)) {
+            let c = cursors[data.sender_id];
+            if (!c) {
+              const el = document.createElement('div');
+              el.className = 'remote-cursor';
+              const col = colorFor(data.sender_id);
+              el.innerHTML = `<i class="bi bi-cursor-fill" style="color:${col}"></i><span class="badge" style="background:${col}">${escapeHtml(data.nickname)}</span>`;
+              document.getElementById('cursorsLayer').appendChild(el);
+              c = cursors[data.sender_id] = { el, x: 0, y: 0, t: 0 };
+            }
+            c.x = data.x; c.y = data.y; c.t = Date.now();
+            placeCursors();
+          }
+        }
+      }
+    );
+    loadPage(currentPageId);
+    setTool('pen');
+  })();
+</script>
