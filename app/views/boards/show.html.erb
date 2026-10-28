@@ -1,3 +1,7 @@
+<% if current_nickname.blank? %>
+  <script>window.location.replace("<%= root_path(return_to: request.fullpath) %>");</script>
+<% end %>
+
 ﻿<style>
   html, body { width: 100vw; height: 100vh; overflow: hidden; margin: 0; user-select: none; }
   #studio { position: relative; width: 100vw; height: 100vh; background: #fff radial-gradient(#cbd5e1 1.2px, transparent 1.2px); background-size: 22px 22px; }

@@ -9,6 +9,7 @@ class BoardsController < ApplicationController
   before_action :set_board, only: %i[show state destroy add_page save_page remove_page update_permissions]
 
   def index
+    session[:return_to] = params[:return_to] if params[:return_to].present?
     return if current_nickname.blank?
     @boards = Board.includes(:board_permissions).order(updated_at: :desc)
     @page_counts = BoardPage.group(:board_id).count
@@ -130,9 +131,13 @@ class BoardsController < ApplicationController
   private
 
   def require_nickname
-    return if current_nickname.present?
-    session[:return_to] = request.fullpath if request.get?
-    redirect_to root_path, alert: "Please enter a nickname first."
+    nick = session[:board_user].to_s.strip
+    if nick.empty? || nick.casecmp("guest").zero?
+      session.delete(:board_user)
+      session[:return_to] = request.fullpath if request.get?
+      redirect_to root_path, alert: "Please enter your nickname to open this board."
+      return false
+    end
   end
 
   def set_board
