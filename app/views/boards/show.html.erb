@@ -6,12 +6,15 @@
   html, body { width: 100vw; height: 100vh; overflow: hidden; margin: 0; user-select: none; }
   #studio { position: relative; width: 100vw; height: 100vh; background: #fff radial-gradient(#cbd5e1 1.2px, transparent 1.2px); background-size: 22px 22px; }
   .top-nav { position: fixed; top: 0; left: 0; right: 0; height: 50px; background: #fff; border-bottom: 1px solid #e2e8f0; z-index: 100; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; }
-  .left-dock { position: fixed; top: 64px; left: 14px; z-index: 100; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 8px 6px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); display: flex; flex-direction: column; gap: 5px; }
-  .tool-btn { width: 38px; height: 38px; border-radius: 8px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all 0.15s ease; }
+  .left-dock { position: fixed; top: 58px; left: 12px; z-index: 100; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 6px 5px; box-shadow: 0 8px 20px rgba(0,0,0,0.08); display: flex; flex-direction: column; align-items: center; gap: 3px; max-height: calc(100vh - 70px); overflow-y: auto; scrollbar-width: none; }
+.left-dock::-webkit-scrollbar { display: none; }
+.left-dock hr { width: 75%; margin: 2px 0 !important; opacity: 0.18; }
+.color-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; padding: 3px 2px; justify-items: center; }
+  .tool-btn { width: 34px; height: 32px; flex-shrink: 0; border-radius: 8px; border: none; background: transparent; color: #475569; display: flex; align-items: center; justify-content: center; font-size: 1rem; transition: all 0.15s ease; }
   .tool-btn:hover:not(:disabled) { background: #f1f5f9; color: #0f172a; }
   .tool-btn.active { background: #2563eb; color: #fff; }
   .tool-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-  .color-dot { width: 20px; height: 20px; border-radius: 50%; cursor: pointer; border: 2px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
+  .color-dot { width: 16px; height: 16px; border-radius: 50%; cursor: pointer; border: 1.5px solid #fff; box-shadow: 0 0 0 1px #cbd5e1; }
   .color-dot.active { transform: scale(1.25); box-shadow: 0 0 0 2px #2563eb; }
   .zoom-box { position: fixed; bottom: 14px; right: 14px; z-index: 100; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 4px 8px; }
   .remote-cursor { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 90; }
@@ -65,7 +68,7 @@
     <button class="tool-btn edit-tool" data-tool="line" title="Line (L)"><i class="bi bi-slash-lg"></i></button>
     <button class="tool-btn edit-tool" data-tool="text" title="Text (T)"><i class="bi bi-fonts"></i></button>
     <hr class="my-1">
-    <div class="d-flex flex-column align-items-center gap-2 py-1">
+    <div class="color-grid">
       <% ["#0f172a", "#ef4444", "#22c55e", "#2563eb", "#eab308"].each_with_index do |c, i| %>
         <span class="color-dot <%= 'active' if i == 0 %>" data-color="<%= c %>" style="background:<%= c %>;"></span>
       <% end %>
